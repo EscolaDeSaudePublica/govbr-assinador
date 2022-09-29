@@ -2,7 +2,7 @@
 
 ################################################
 # Conf desenv govbr
-$redirect_uri = "http://127.0.0.1:8080/assinar.php";
+$redirect_uri = "http://assinador.dev.org.br/assinar.php";
 $clientid = "devLocal";
 $secret = "younIrtyij3";
 $servidorOauth = "cas.staging.iti.br/oauth2.0"; #govbr
