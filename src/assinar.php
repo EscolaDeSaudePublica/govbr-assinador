@@ -30,67 +30,68 @@ if (!$code || $_SESSION['code_used']) {
   header("Location: $authorizeUri"); /* Redirect browser */
   exit;
 } else {
-  // 2. Obter access token a partir do código de autorização
-  $accessTokenUri = $tokenUri .
-                "?code=$code" .
-                "&client_id=$clientid" .
-                "&grant_type=authorization_code" .
-                "&client_secret=$secret" .
-                "&redirect_uri=" . urlencode($redirect_uri);
 
-  $options = array(
-      'http' => array(
-          'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
-          'method'  => 'POST'
-      )
-  );
+  $urlApiESP = "http://127.0.0.1:8081/signPdf/$code";
+  $urlLoteApiESP = "http://127.0.0.1:8081/signPdf/lote/$code";
+
+  $curl = curl_init();
+  curl_setopt($curl, CURLOPT_POST, true);
+  curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+
+  if ($_SESSION['lote']) {
+    $headers = [
+        'Content-Type: multipart/form-data',
+        'User-Agent: '.$_SERVER['HTTP_USER_AGENT'],
+    ];
+    curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($curl, CURLOPT_URL, $urlLoteApiESP);
+    $filesToSign = array();
+
+    foreach ($_SESSION['files'] as $fileName => $fileData) {
+        $fileFullName = __DIR__."/tmp/$fileName";
+        file_put_contents($fileFullName, $fileData);
+        array_push($filesToSign, new CURLFILE($fileFullName));
+    }
+
+    $post_data = array('pdfs'=> $filesToSign);
+    print_r($post_data);
+
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data);
   
-  $context  = stream_context_create($options);
-  $result = file_get_contents($accessTokenUri, false, $context);
-  $response = json_decode($result);
-  $AT = $response->access_token;
+    $signedFilesZip = curl_exec($curl);
+    var_dump($signedFilesZip);
+    var_dump(curl_error($curl));
+    // $signedFilesZip = json_decode(curl_exec($curl), TRUE);
+    // $signedFiles = $signedFilesZip;//descompacta signedFilesZip;
+
+    // foreach ($signedFiles as $signedFile) {
+        $signFilePath = $fileFullName.'_Assinado.zip';
+        file_put_contents($signFilePath, $signedFilesZip);
+    // }
+
+  } else {
+
+    curl_setopt($curl, CURLOPT_URL, $urlApiESP);
+
+    foreach ($_SESSION['files'] as $fileName => $fileData) {
+        $fileFullName = __DIR__."/tmp/$fileName";
+        file_put_contents($fileFullName, $fileData);
+        $fileToSign = new CURLFILE($fileFullName);
+    }
+
+    $post_data = array('pdf'=> $fileToSign);
+
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data);
+  
+    $signedFile = curl_exec($curl);
+  
+    $signedFileFullName = $fileFullName.'_Assinado.pdf';
+    file_put_contents($signedFileFullName, $signedFile);
+  }
+
+  curl_close($curl);  
   $_SESSION['code_used'] = true;
-  ################################################
-  # Início das operações criptográficas
 
-  // 3. Fazer download do certificado público
-  
-  $options = array(
-      'http' => array(
-          'header'  => "Authorization: Bearer $AT\r\n",
-          'method'  => 'GET'
-      )
-  );
-
-  $context  = stream_context_create($options);
-  $certBase64 = file_get_contents($certificateUri, false, $context);
-
-
-  // 4. Fazer a operação de criptográfica de assinatura
-  // No caso de assinaturas em lote, deve-se realizar uma chamada da operação de assinatura por documento.
-
-  // Hash deve ser SHA256
-  $hashes = $_SESSION['hashes'];
-  $assinaturas = [];
-
-  foreach ($hashes as $arquivo => $hash) {
-    $pacoteAssinatura = json_encode(array('hashBase64' => base64_encode($hash)));
-    $options = array(
-      'http' => array(
-          'header'  => "Content-type: application/json\r\n" .
-          "Authorization: Bearer $AT\r\n",
-          'method'  => 'POST',
-          'content' => $pacoteAssinatura
-          )
-        );
-    $context  = stream_context_create($options);
-    $assinaturaBase64 = file_get_contents($signingUri, false, $context);
-    $assinaturas[$arquivo] = $assinaturaBase64;
-  }
-
-  function makeLapoLink($base64) {
-    return 'http://lapo.it/asn1js/#' . preg_replace('/(-----[\s\w]+-----)|\n/m', '', $base64);
-  }
   ?>
 
 <!DOCTYPE html>
@@ -109,41 +110,16 @@ if (!$code || $_SESSION['code_used']) {
             <div class="col-sm-8 border">
                 <div class="row pb-4 justify-content-center">
                     <div class="col-sm-12">
-                        <div class="lead">Certificado Público: </div>
+                        <div class="lead">Arquivo(s) Assinado(s): </div>
                     </div>
                 </div>
                
-                <div class="row pb-4 justify-content-center">
-                    <div class="col-sm-12">
-                        <div class="input-group">
-                            <textarea class="form-control" id="certificado" rows="10" readonly><?php echo $certBase64 ?></textarea>
-                            <a href="<?php echo makelapoLink($certBase64) ?>" target="_blank" class="input-group-text"><i class="bi bi-arrow-up-right-square"></i></a>
-                            <a download="certificado.crt" class="input-group-text" href="data:text/plain;base64,<?php echo base64_encode($certBase64) ?>"><i class="bi bi-cloud-download"></i></a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row justify-content-center mt-4">
-            <div class="col-sm-8 border">
-                <div class="row pb-4 justify-content-center">
-                    <div class="col-sm-12">
-                        <div class="lead">Assinaturas PKCS#7: </div>
-                    </div>
-                </div>
-               
-                <?php foreach ($assinaturas as $arquivo => $assinatura) { ?>
-                <div class="row pb-4 justify-content-center">
-                    <div class="col-sm-2">
-                        <span class="text-break"><?php echo $arquivo ?></span>
-                    </div>
-                    
+                <?php foreach ($_SESSION['files'] as $fileName => $fileData) { ?>
+                <div class="row pb-4 justify-content-center">                    
                     <div class="col-sm-10 ">
                         <div class="input-group">
-                            <textarea class="form-control" rows="5" readonly><?php echo base64_encode($assinatura) ?></textarea>
-                            <a href="<?php echo makelapoLink(base64_encode($assinatura)) ?>" target="_blank" class="input-group-text"><i class="bi bi-arrow-up-right-square"></i></a>
-                            <a download="<?php echo $arquivo ?>.p7s" class="input-group-text" href="data:text/plain;base64,<?php echo base64_encode($assinatura) ?>"><i class="bi bi-cloud-download"></i></a>
+                            <textarea class="form-control" rows="1" readonly><?php echo $fileName ?></textarea>
+                            <a download="<?php echo 'tmp/'.$fileName.'_Assinado.pdf' ?>" class="input-group-text" href="<?php echo 'tmp/'.$fileName.'_Assinado.pdf' ?>"><i class="bi bi-cloud-download"></i></a>
                         </div>
                     </div>
                 </div>

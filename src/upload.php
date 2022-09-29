@@ -11,17 +11,17 @@ session_start();
 if ($_FILES["fileToUpload"]) {
     $data = file_get_contents($_FILES["fileToUpload"]["tmp_name"]);
     $_SESSION['lote'] = false;
-    $_SESSION['hashes'] = [$_FILES["fileToUpload"]["name"] => hash('sha256', $data, true)];
+    $_SESSION['files'] = [$_FILES["fileToUpload"]["name"] => $data];
 } else if ($_FILES["multipleFilesToUpload"]) {
     ################################################
     # Caso estejamos tratanto de assinaturas em lote 
 
     $_SESSION['lote'] = true;
     $file_count = count($_FILES["multipleFilesToUpload"]["name"]);
-    $_SESSION['hashes'] = [];
+    $_SESSION['files'] = [];
     for ($i=0; $i < $file_count; $i++) {
         $data = file_get_contents($_FILES["multipleFilesToUpload"]["tmp_name"][$i]);
-        $_SESSION['hashes'][$_FILES["multipleFilesToUpload"]["name"][$i]] = hash('sha256', $data, true);
+        $_SESSION['files'][$_FILES["multipleFilesToUpload"]["name"][$i]] = $data;
     }
 }
 
